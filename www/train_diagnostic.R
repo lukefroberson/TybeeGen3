@@ -248,6 +248,33 @@ for (col in predictor_cols) {
   }
 }
 
+cat("\nDebugging data structure before training...\n")
+cat(sprintf("  X_train class: %s\n", paste(class(X_train), collapse = ", ")))
+cat(sprintf("  X_train dimensions: %d rows x %d cols\n", nrow(X_train), ncol(X_train)))
+cat(sprintf("  y_train class: %s (length: %d)\n", class(y_train), length(y_train)))
+
+# Check for any NA values that might have snuck through
+cat("\nChecking for NAs in each column:\n")
+for (col in predictor_cols) {
+  n_na <- sum(is.na(X_train[[col]]))
+  if (n_na > 0) {
+    cat(sprintf("  WARNING: %s has %d NA values!\n", col, n_na))
+  }
+}
+cat(sprintf("  y_train NAs: %d\n", sum(is.na(y_train)))
+
+# Sample values from numeric columns
+cat("\nSample values from first numeric column (rain_3day):\n")
+cat(sprintf("  Values: %s\n", paste(head(X_train$rain_3day, 10), collapse = ", ")))
+cat(sprintf("  Class: %s\n", class(X_train$rain_3day)))
+cat(sprintf("  Is numeric: %s\n", is.numeric(X_train$rain_3day)))
+cat(sprintf("  Is factor: %s\n", is.factor(X_train$rain_3day)))
+
+# Explicitly convert to base data.frame to avoid tibble issues
+cat("\nConverting to base data.frame to avoid tibble issues...\n")
+X_train <- as.data.frame(X_train)
+cat(sprintf("  X_train class after conversion: %s\n", paste(class(X_train), collapse = ", ")))
+
 cat("\nTraining Random Forest using x/y interface...\n")
 set.seed(123)
 rf_model <- randomForest(
