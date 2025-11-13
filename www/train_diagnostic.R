@@ -261,7 +261,7 @@ for (col in predictor_cols) {
     cat(sprintf("  WARNING: %s has %d NA values!\n", col, n_na))
   }
 }
-cat(sprintf("  y_train NAs: %d\n", sum(is.na(y_train)))
+cat(sprintf("  y_train NAs: %d\n", sum(is.na(y_train))))
 
 # Sample values from numeric columns
 cat("\nSample values from first numeric column (rain_3day):\n")
