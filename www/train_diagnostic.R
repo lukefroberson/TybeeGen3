@@ -283,11 +283,24 @@ rf_model <- randomForest(
   ntree = 500,
   mtry = 4,
   importance = TRUE,
-  na.action = na.omit,
   keep.forest = TRUE
+  # Removed na.action since we pre-filtered all NAs
 )
 
 cat("✓ Training complete\n")
+
+# DEBUG: Check the actual structure of xlevels
+cat("\nDEBUG: Examining xlevels structure:\n")
+if (!is.null(rf_model$forest$xlevels)) {
+  for (var_name in names(rf_model$forest$xlevels)) {
+    levels_data <- rf_model$forest$xlevels[[var_name]]
+    cat(sprintf("  %s: class=%s, length=%d, values=%s\n",
+                var_name,
+                class(levels_data),
+                length(levels_data),
+                paste(head(levels_data, 3), collapse=", ")))
+  }
+}
 
 # ============================================================================
 # STEP 6: VERIFY MODEL IMMEDIATELY
@@ -320,11 +333,32 @@ if (!is.null(rf_model$forest$xlevels)) {
   cat("⚠ Cannot check factor levels\n")
 }
 
-# Test prediction
-cat("\nTesting prediction capability...\n")
+# Test prediction on a single observation
+cat("\nTesting prediction capability on single observation...\n")
 test_obs <- test_data[1, ]
-test_pred <- predict(rf_model, test_obs)
-cat(sprintf("  Test prediction: %.2f CFU/100mL\n", test_pred))
+test_pred_single <- predict(rf_model, test_obs)
+cat(sprintf("  Single test prediction: %.2f CFU/100mL\n", test_pred_single))
+
+# Test prediction on entire test set
+cat("\nTesting prediction on entire test set...\n")
+X_test <- test_data[, predictor_cols]
+X_test <- as.data.frame(X_test)  # Ensure it's a data.frame
+test_pred_all <- predict(rf_model, X_test)
+cat(sprintf("  Predictions generated: %d\n", length(test_pred_all)))
+cat(sprintf("  Sample predictions: %s\n", paste(round(head(test_pred_all, 5), 2), collapse=", ")))
+
+# Calculate simple RMSE
+test_rmse <- sqrt(mean((test_pred_all - test_data$entero)^2))
+cat(sprintf("  Test RMSE: %.2f CFU/100mL\n", test_rmse))
+
+# Check if predictions vary (if all same, model is broken)
+pred_var <- var(test_pred_all)
+cat(sprintf("  Prediction variance: %.2f\n", pred_var))
+if (pred_var < 0.01) {
+  cat("  ❌ WARNING: Predictions have near-zero variance - model may not be working!\n")
+} else {
+  cat("  ✓ Predictions vary appropriately\n")
+}
 
 # ============================================================================
 # STEP 7: SAVE MODEL
