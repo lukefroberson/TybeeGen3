@@ -197,26 +197,55 @@ tab4_server <- function(input, output, session, model, historical_data) {
     # Make prediction - with error handling
     prediction <- tryCatch({
       if (is.null(model)) {
-        stop("Model not loaded. Please ensure tybee_advisory_model.rds is in the models/ directory.")
+        stop("Model not loaded. Please ensure model file is in the models/ directory.")
       }
 
-      # Get prediction from random forest model
-      pred_value <- predict(model, newdata = new_data)
-      
-      # Calculate confidence based on prediction variance
-      # For random forest, we can use the individual tree predictions
-      if ("randomForest" %in% class(model)) {
-        tree_preds <- predict(model, newdata = new_data, predict.all = TRUE)$individual
-        pred_sd <- sd(tree_preds)
-        pred_mean <- mean(tree_preds)
+      # Detect model type
+      is_classification <- "randomForest" %in% class(model) && model$type == "classification"
+
+      if (is_classification) {
+        # CLASSIFICATION MODEL - predicts advisory yes/no with probabilities
+        pred_class <- predict(model, newdata = new_data, type = "response")
+        pred_prob <- predict(model, newdata = new_data, type = "prob")
+
+        # Get probability of advisory
+        advisory_prob <- pred_prob[, "Yes"]
+
+        # For classification, show the probability as the main metric
+        # and estimate a bacteria level based on historical patterns
+        # (Advisories are typically 70-200 CFU/100mL)
+        if (pred_class == "Yes") {
+          # Estimate higher end if model predicts advisory
+          estimated_level <- 70 + (advisory_prob * 130)  # Range: 70-200
+        } else {
+          # Estimate lower end if model predicts no advisory
+          estimated_level <- (1 - advisory_prob) * 50  # Range: 0-50
+        }
+
+        # For classification, confidence is the prediction probability
+        confidence <- max(pred_prob) * 100
+
+        # Approximate standard deviation from probability
+        # More certain predictions have lower SD
+        pred_sd <- 30 * (1 - max(pred_prob))
+        pred_mean <- estimated_level
+
       } else {
-        # Fallback if not random forest
-        pred_mean <- as.numeric(pred_value)
-        pred_sd <- pred_mean * 0.15  # Assume 15% CV as fallback
+        # REGRESSION MODEL - predicts exact bacteria level
+        pred_value <- predict(model, newdata = new_data)
+
+        # Calculate confidence based on prediction variance
+        if ("randomForest" %in% class(model)) {
+          tree_preds <- predict(model, newdata = new_data, predict.all = TRUE)$individual
+          pred_sd <- sd(tree_preds)
+          pred_mean <- mean(tree_preds)
+        } else {
+          pred_mean <- as.numeric(pred_value)
+          pred_sd <- pred_mean * 0.15
+        }
+
+        confidence <- max(0, min(100, 100 * (1 - pred_sd / max(pred_mean, 1))))
       }
-      
-      # Calculate confidence level (inverse of coefficient of variation)
-      confidence <- max(0, min(100, 100 * (1 - pred_sd / max(pred_mean, 1))))
       
       # Calculate factor importance for this specific prediction
       factor_contrib <- calculate_factor_importance(new_data, model, historical_data)
