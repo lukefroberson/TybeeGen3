@@ -161,7 +161,7 @@ tab4_server <- function(input, output, session, model, historical_data) {
     # Create input data frame matching model's expected format
     # Use variable names that match the source data format
     new_data <- data.frame(
-      beach_name = actual_beach_name,
+      beach = actual_beach_name,
       rain3day = input$forecast_rain,
       water_temp_avg_f = input$forecast_temp,
       maxtemp_f = input$forecast_air_temp,
@@ -325,7 +325,7 @@ tab4_server <- function(input, output, session, model, historical_data) {
     )
   })
   
-  # Display map with selected beach highlighted
+  # Initialize the map once on startup
   output$forecast_map <- renderLeaflet({
     # Load actual site coordinates from TybeeSiteData.xlsx
     site_coords <- tryCatch({
@@ -333,14 +333,36 @@ tab4_server <- function(input, output, session, model, historical_data) {
     }, error = function(e) {
       # Fallback coordinates if file not found
       data.frame(
-        MonitoringLocationName = c("TYBEE ISLAND NORTH", "TYBEE ISLAND MIDDLE", 
-                                   "TYBEE ISLAND SOUTH", "TYBEE ISLAND POLK ST.", 
+        MonitoringLocationName = c("TYBEE ISLAND NORTH", "TYBEE ISLAND MIDDLE",
+                                   "TYBEE ISLAND SOUTH", "TYBEE ISLAND POLK ST.",
                                    "TYBEE ISLAND STRAND"),
         Latitude = c(32.02069, 32.00731, 31.98683, 32.02613, 31.99299),
         Longitude = c(-80.84148, -80.84100, -80.85130, -80.85473, -80.84579)
       )
     })
-    
+
+    # Create base map
+    leaflet() %>%
+      addTiles() %>%
+      setView(lng = -80.846, lat = 32.005, zoom = 13)
+  })
+
+  # Update map markers when beach selection changes
+  observe({
+    # Load actual site coordinates from TybeeSiteData.xlsx
+    site_coords <- tryCatch({
+      read_excel("www/TybeeSiteData.xlsx")
+    }, error = function(e) {
+      # Fallback coordinates if file not found
+      data.frame(
+        MonitoringLocationName = c("TYBEE ISLAND NORTH", "TYBEE ISLAND MIDDLE",
+                                   "TYBEE ISLAND SOUTH", "TYBEE ISLAND POLK ST.",
+                                   "TYBEE ISLAND STRAND"),
+        Latitude = c(32.02069, 32.00731, 31.98683, 32.02613, 31.99299),
+        Longitude = c(-80.84148, -80.84100, -80.85130, -80.85473, -80.84579)
+      )
+    })
+
     # Map official names to our display names
     name_mapping <- c(
       "TYBEE ISLAND NORTH" = "North Beach",
@@ -349,15 +371,15 @@ tab4_server <- function(input, output, session, model, historical_data) {
       "TYBEE ISLAND POLK ST." = "Polk Street",
       "TYBEE ISLAND STRAND" = "Strand Street"
     )
-    
+
     site_coords$beach_name <- name_mapping[site_coords$MonitoringLocationName]
-    
+
     # Highlight selected beach
     site_coords$is_selected <- site_coords$beach_name == input$forecast_beach
-    
-    # Create leaflet map
-    leaflet(site_coords) %>%
-      addTiles() %>%
+
+    # Update map with new markers
+    leafletProxy("forecast_map", data = site_coords) %>%
+      clearMarkers() %>%
       addCircleMarkers(
         ~Longitude, ~Latitude,
         popup = ~beach_name,
@@ -368,8 +390,7 @@ tab4_server <- function(input, output, session, model, historical_data) {
         fillOpacity = ~ifelse(is_selected, 0.9, 0.7),
         stroke = TRUE,
         weight = 2
-      ) %>%
-      setView(lng = -80.846, lat = 32.005, zoom = 13)
+      )
   })
 }
 
