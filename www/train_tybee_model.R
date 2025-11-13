@@ -218,6 +218,9 @@ cat(sprintf("  Using %d predictors to predict entero\n", length(predictor_cols))
 X_train <- train_data[, predictor_cols]
 y_train <- train_data$entero
 
+# Ensure X_train is a base data.frame (not tibble)
+X_train <- as.data.frame(X_train)
+
 # Train Random Forest using x/y interface
 set.seed(123)
 rf_model <- randomForest(
@@ -226,8 +229,8 @@ rf_model <- randomForest(
   ntree = 500,              # Number of trees
   mtry = 4,                 # Number of variables at each split
   importance = TRUE,        # Calculate variable importance
-  na.action = na.omit,      # Handle missing values
   keep.forest = TRUE        # Keep the forest for prediction
+  # Note: na.action removed - data is pre-filtered
 )
 
 cat("\n")
