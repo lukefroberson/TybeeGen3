@@ -13,7 +13,6 @@ library(randomForest)
 library(ggplot2)
 
 # ===== SOURCE TAB FILES =====
-source("utilities.R")                # Utility functions (API calls, helpers)
 source("tab1_dashboard.R")        # Tab 1: Dashboard
 source("tab2_education.R")        # Tab 2: Learn About Water Quality
 source("tab3_historic_data.R")    # Tab 3: Historic Data
@@ -66,7 +65,7 @@ get_usgs_water_temp <- function(verbose = FALSE) {
                           timestamp <- Sys.time()
                         }
                         
-                        cat("Water temperature:", temp_fahrenheit, "F\n")
+                        cat("✓ Water temperature:", temp_fahrenheit, "°F\n")
                         
                         return(list(
                           temp_f = temp_fahrenheit,
@@ -175,7 +174,7 @@ get_noaa_tidal_data <- function(verbose = FALSE) {
         } else {
           result$current_stage <- "Mid-tide"
         }
-        cat("DETERMINED TIDE STAGE:", result$current_stage, "\n")
+        cat("✓ DETERMINED TIDE STAGE:", result$current_stage, "\n")
       }
     }
     
@@ -206,7 +205,7 @@ get_noaa_tidal_data <- function(verbose = FALSE) {
           }
           result$station_name <- "Fort Pulaski, GA (nearby)"
           result$station_id <- "8670870"
-          cat("Tide data from Fort Pulaski:", result$current_stage, "\n")
+          cat("✓ Tide data from Fort Pulaski:", result$current_stage, "\n")
         }
       }
     }
@@ -238,7 +237,7 @@ get_noaa_tidal_data <- function(verbose = FALSE) {
           if (!is.na(next_high$datetime)) {
             result$next_high$time <- format(next_high$datetime, "%I:%M %p")
             result$next_high$height <- round(next_high$height, 1)
-            cat("Next high tide:", result$next_high$time, "at", result$next_high$height, "ft\n")
+            cat("✓ Next high tide:", result$next_high$time, "at", result$next_high$height, "ft\n")
           }
           
           # Next low tide
@@ -246,7 +245,7 @@ get_noaa_tidal_data <- function(verbose = FALSE) {
           if (!is.na(next_low$datetime)) {
             result$next_low$time <- format(next_low$datetime, "%I:%M %p")
             result$next_low$height <- round(next_low$height, 1)
-            cat("Next low tide:", result$next_low$time, "at", result$next_low$height, "ft\n")
+            cat("✓ Next low tide:", result$next_low$time, "at", result$next_low$height, "ft\n")
           }
         }
       }
@@ -400,34 +399,44 @@ predict_water_quality <- function(rainfall_3day, air_temp, water_temp = NULL, ti
 
 # ===== LOAD TAB 1 COMPONENTS =====
 source("tab1_dashboard.R", local = TRUE)
-cat("Tab 1 components loaded\n")
+cat("✓ Tab 1 components loaded\n")
 
 # Function to load trained models
 load_trained_models <- function() {
   models <- list()
-  
+
   tryCatch({
     if (file.exists("models/main_model.rds")) {
       models$main <- readRDS("models/main_model.rds")
-      cat("Loaded trained model from models/main_model.rds\n")
+      cat("✓ Loaded trained model from models/main_model.rds\n")
     } else {
-      cat("No trained model found at models/main_model.rds\n")
+      cat("⚠ No trained model found at models/main_model.rds\n")
       models$main <- NULL
     }
-    
+
     if (file.exists("models/model_metadata.rds")) {
       models$metadata <- readRDS("models/model_metadata.rds")
-      cat("Loaded model metadata\n")
+      cat("✓ Loaded model metadata\n")
     } else {
-      cat("No model metadata found\n")
+      cat("⚠ No model metadata found\n")
       models$metadata <- NULL
     }
+
+    # Load forecast model for Tab 4
+    if (file.exists("models/tybee_advisory_model.rds")) {
+      models$forecast <- readRDS("models/tybee_advisory_model.rds")
+      cat("✓ Loaded forecast model from models/tybee_advisory_model.rds\n")
+    } else {
+      cat("⚠ No forecast model found at models/tybee_advisory_model.rds\n")
+      models$forecast <- NULL
+    }
   }, error = function(e) {
-    cat(" Error loading trained models:", e$message, "\n")
+    cat("✗ Error loading trained models:", e$message, "\n")
     models$main <- NULL
     models$metadata <- NULL
+    models$forecast <- NULL
   })
-  
+
   return(models)
 }
 
@@ -558,7 +567,7 @@ make_bacterial_prediction <- function(beach_name, rainfall_3day, max_temp, water
 
 # UPDATED: Function to load actual historical data from new Excel files
 load_historical_data <- function() {
-  cat("Loading historical beach data...\n")
+  cat("✓ Loading historical beach data...\n")
   
   # UPDATED: New file names
   files <- c("PolkStreet.xlsx", "MiddleBeach.xlsx", "NorthBeach.xlsx", 
@@ -585,7 +594,7 @@ load_historical_data <- function() {
   # Load site coordinate data
   site_coords <- tryCatch({
     coord_data <- read_excel("www/TybeeSiteData.xlsx")
-    cat("Loaded site coordinates from TybeeSiteData.xlsx\n")
+    cat("✓ Loaded site coordinates from TybeeSiteData.xlsx\n")
     
     coord_data$Latitude <- as.numeric(coord_data$Latitude)
     coord_data$Longitude <- as.numeric(coord_data$Longitude)
@@ -608,7 +617,7 @@ load_historical_data <- function() {
     
     coord_data
   }, error = function(e) {
-    cat("Could not load TybeeSiteData.xlsx:", e$message, "\n")
+    cat("⚠ Could not load TybeeSiteData.xlsx:", e$message, "\n")
     data.frame(
       MonitoringLocationName = c("Polk Street", "Middle Beach", "North Beach", "South Beach", "Strand Street"),
       Latitude = c(32.01670, 32.00000, 32.02000, 31.98330, 32.01000),
@@ -695,13 +704,13 @@ load_historical_data <- function() {
                    WaterTempMin, WaterTempMax)
           
           all_data <- rbind(all_data, temp_data)
-          cat("", standard_name, "-", nrow(temp_data), "records\n")
+          cat("✓", standard_name, "-", nrow(temp_data), "records\n")
           
         }, error = function(e) {
-          cat("Error loading", file, "\n")
+          cat("⚠ Error loading", file, "\n")
         })
       } else {
-        cat("File not found:", file, "\n")
+        cat("⚠ File not found:", file, "\n")
       }
     }
     
@@ -722,14 +731,14 @@ load_historical_data <- function() {
         rename(Site = MonitoringLocationName) %>%
         arrange(Site, Date)
       
-      cat("Data loaded:", nrow(all_data), "records from", length(unique(all_data$MonitoringLocationName)), "sites (", 
+      cat("✓ Data loaded:", nrow(all_data), "records from", length(unique(all_data$MonitoringLocationName)), "sites (", 
           as.character(min(all_data$Date)), "to", as.character(max(all_data$Date)), ")\n")
       
       return(list(site_data = site_data, ts_data = ts_data))
     }
     
   }, error = function(e) {
-    cat("Error loading data, using sample data\n")
+    cat("⚠ Error loading data, using sample data\n")
   })
   
   return(load_sample_data())
@@ -789,7 +798,7 @@ load_sample_data <- function() {
 
 # Load advisory data function (unchanged from original)
 load_advisory_data <- function() {
-  cat("Loading advisory data...\n")
+  cat("✓ Loading advisory data...\n")
   
   advisory_summary <- NULL
   advisory_details <- NULL
@@ -799,7 +808,7 @@ load_advisory_data <- function() {
   if (file.exists(summary_file)) {
     tryCatch({
       advisory_summary <- read_excel(summary_file)
-      cat("Loaded advisory summary data:", nrow(advisory_summary), "records\n")
+      cat("✓ Loaded advisory summary data:", nrow(advisory_summary), "records\n")
       
       # Clean column names but preserve original structure
       names(advisory_summary) <- make.names(names(advisory_summary))
@@ -821,11 +830,11 @@ load_advisory_data <- function() {
       }
       
     }, error = function(e) {
-      cat("Error loading advisory summary data:", e$message, "\n")
+      cat("⚠ Error loading advisory summary data:", e$message, "\n")
       advisory_summary <- NULL
     })
   } else {
-    cat("Advisory summary file not found:", summary_file, "\n")
+    cat("⚠ Advisory summary file not found:", summary_file, "\n")
   }
   
   # Load detailed data (BeachAdvisoryDuration.xlsx)
@@ -833,7 +842,7 @@ load_advisory_data <- function() {
   if (file.exists(details_file)) {
     tryCatch({
       advisory_details <- read_excel(details_file)
-      cat("Loaded advisory details data:", nrow(advisory_details), "records\n")
+      cat("✓ Loaded advisory details data:", nrow(advisory_details), "records\n")
       
       # Clean and process dates
       advisory_details$ActionStartDate <- as.Date(advisory_details$ActionStartDate)
@@ -858,11 +867,11 @@ load_advisory_data <- function() {
         filter(!is.na(ActionStartDate), !is.na(ActionEndDate))
       
     }, error = function(e) {
-      cat("Error loading advisory details data:", e$message, "\n")
+      cat("⚠ Error loading advisory details data:", e$message, "\n")
       advisory_details <- NULL
     })
   } else {
-    cat("Advisory details file not found:", details_file, "\n")
+    cat("⚠ Advisory details file not found:", details_file, "\n")
   }
   
   return(list(summary = advisory_summary, details = advisory_details))
@@ -871,9 +880,9 @@ load_advisory_data <- function() {
 # Function to get data freshness indicator
 data_freshness <- function(last_sample_date) {
   days_old <- as.numeric(Sys.Date() - last_sample_date)
-  if (days_old <= 7) return("ðŸŸ¢ Recent")
-  if (days_old <= 30) return("ðŸŸ¡ Moderate")
-  return("ðŸ”´ Stale")
+  if (days_old <= 7) return("🟢 Recent")
+  if (days_old <= 30) return("🟡 Moderate")
+  return("🔴 Stale")
 }
 
 # Generate synthetic performance data for demonstration
@@ -1084,7 +1093,7 @@ ui <- dashboardPage(
                                    p("Enterococci are bacteria that live in the intestinal tracts of warm-blooded animals, including humans."),
                                    h4("Advisory Threshold"),
                                    tags$ul(
-                                     tags$li(strong("No Advisory:"), " â‰¤ 70 CFUs/100mL"),
+                                     tags$li(strong("No Advisory:"), " ≤ 70 CFUs/100mL"),
                                      tags$li(strong("Advisory Recommended:"), " > 70 CFUs/100mL")
                                    ),
                                    p("When bacterial levels exceed 70 CFUs/100mL, a beach water quality advisory is recommended by the Georgia Coastal Resources Division.")
@@ -1140,7 +1149,8 @@ server <- function(input, output, session) {
   # Convert to reactiveValues for Tab 1 compatibility
   trained_models <- reactiveValues(
     main = trained_models_original$main,
-    metadata = trained_models_original$metadata
+    metadata = trained_models_original$metadata,
+    forecast = trained_models_original$forecast
   )
   
   # Current conditions for Tab 1
@@ -1156,7 +1166,7 @@ server <- function(input, output, session) {
     current_conditions$weather <- get_tybee_weather()
     current_conditions$tide <- get_noaa_tidal_data()
     current_conditions$water_temp <- get_usgs_water_temp()
-    cat("Initial environmental data loaded for Tab 1\n")
+    cat("✓ Initial environmental data loaded for Tab 1\n")
   })
   
   # Auto-update every 15 minutes
@@ -1188,57 +1198,27 @@ server <- function(input, output, session) {
   
   # Call Tab 1 server
   tab1_server(input, output, session, beach_predictions, current_conditions, trained_models)
-  
+
   # Call Tab 2 server
   tab2_server(input, output, session)
-  
-  # Call Tab 3 server with properly formatted data
-  # Tab 3 expects: SampleDate, Enterococcus, MonitoringLocationName
-  # Our data has: Date, Bacteria, Site (or MonitoringLocationName)
-  beaches_vector <- c("Polk Street", "Middle Beach", "North Beach", "South Beach", "Strand Street")
-  
-  # Create adapted data for tab3
-  tab3_site_data <- reactive({
-    req(data())
-    data()$ts_data %>%
-      rename(
-        SampleDate = Date,
-        Enterococcus = Bacteria,
-        MonitoringLocationName = Site
-      )
-  })
-  
-  # Call tab3 server with advisory datasets
-  tab3_server(input, output, session, tab3_site_data, beaches_vector, advisory_datasets)
-  
-  # ===== TAB 4: INTERACTIVE FORECAST TOOL =====
-  # Load the Random Forest model for predictions
-  rf_model <- reactive({
-    tryCatch({
-      if (file.exists("models/tybee_advisory_model.rds")) {
-        model <- readRDS("models/tybee_advisory_model.rds")
-        cat(" Loaded prediction model: models/tybee_advisory_model.rds\n")
-        model
-      } else if (file.exists("tybee_advisory_model.rds")) {
-        model <- readRDS("tybee_advisory_model.rds")
-        cat(" Loaded prediction model: tybee_advisory_model.rds\n")
-        model
-      } else {
-        cat("⚠ Model file not found: models/tybee_advisory_model.rds\n")
-        NULL
-      }
-    }, error = function(e) {
-      cat("Error loading model:", e$message, "\n")
-      NULL
-    })
-  })
-  
-  # Call tab4 server with model and historical data
-  tab4_server(input, output, session, 
-              model = rf_model(), 
-              historical_data = data()$ts_data)
-  
-  # ===== END TAB 1-4 INITIALIZATION =====
+
+  # Call Tab 4 server - Interactive Forecast Tool
+  tab4_server(input, output, session, trained_models$forecast, historical_data = NULL)
+
+  # Call Tab 3 server - Note: Tab 3 expects data in specific format
+  # It will use the existing data() reactive and site selection
+  # The tab3_server function is defined in tab3_historic_data.R
+  # For now, Tab 3 will use the existing time series outputs defined below
+  # To fully integrate Tab 3, you would call:
+  # beaches_vector <- c("North Beach", "Middle Beach", "South Beach", "Polk Street", "Strand Street")
+  # Create a reactive for tab3 that formats data appropriately:
+  # tab3_data <- reactive({
+  #   data()$ts_data %>% 
+  #     rename(SampleDate = Date) %>%
+  #     select(SampleDate, MonitoringLocationName, Enterococcus, everything())
+  # })
+  # tab3_server(input, output, session, tab3_data, beaches_vector)
+  # ===== END TAB 1-3 INITIALIZATION =====
   
   # Load data
   data <- reactive({
@@ -1248,7 +1228,7 @@ server <- function(input, output, session) {
       min_date <- min(result$ts_data$Date, na.rm = TRUE)
       max_date <- max(result$ts_data$Date, na.rm = TRUE)
       
-      cat("Data loaded with date range: ", as.character(min_date), "to", as.character(max_date), "\n")
+      cat("✓ Data loaded with date range: ", as.character(min_date), "to", as.character(max_date), "\n")
     }
     
     return(result)
@@ -1360,17 +1340,17 @@ server <- function(input, output, session) {
       
       # Air temperature
       weather_items <- append(weather_items, 
-                              list(tags$p(icon("thermometer-half", class = "fa-lg"), paste(" Air Temp:", temp_f, "F"))))
+                              list(tags$p(icon("thermometer-half", class = "fa-lg"), paste(" Air Temp:", temp_f, "°F"))))
       
       # Live water temperature from USGS (if available)
       if (!is.null(water_temp_data) && !is.na(water_temp_data$temp_f)) {
         age_hours <- as.numeric(difftime(Sys.time(), water_temp_data$timestamp, units = "hours"))
-        freshness_indicator <- if (age_hours < 2) "ðŸŸ¢" else if (age_hours < 6) "ðŸŸ¡" else "ðŸ”´"
+        freshness_indicator <- if (age_hours < 2) "🟢" else if (age_hours < 6) "🟡" else "🔴"
         
         weather_items <- append(weather_items, 
                                 list(tags$p(
                                   icon("tint", class = "fa-lg"), 
-                                  paste(" Water Temp:", water_temp_data$temp_f, "F", freshness_indicator),
+                                  paste(" Water Temp:", water_temp_data$temp_f, "°F", freshness_indicator),
                                   tags$br(),
                                   tags$small(style = "color: #666; margin-left: 25px;", 
                                              paste("USGS Fort Pulaski,", round(age_hours, 1), "hrs ago"))
@@ -1465,7 +1445,7 @@ server <- function(input, output, session) {
         
         # Include water temperature in popup if available
         water_temp_text <- if (!is.na(site_data$LastWaterTemp[i])) {
-          paste0("<p><strong>Last Water Temp: </strong>", round(site_data$LastWaterTemp[i], 1), "F</p>")
+          paste0("<p><strong>Last Water Temp: </strong>", round(site_data$LastWaterTemp[i], 1), "°F</p>")
         } else {
           ""
         }
@@ -1605,13 +1585,13 @@ server <- function(input, output, session) {
             data = filtered_data,
             x = ~Date, y = ~WaterTemp,
             type = 'scatter', mode = 'lines',
-            name = 'Water Temp (F)',
+            name = 'Water Temp (°F)',
             yaxis = 'y3',
             line = list(color = 'green', width = 2)
           ) %>%
           layout(
             yaxis3 = list(
-              title = "Water Temp (F)",
+              title = "Water Temp (°F)",
               side = "right",
               overlaying = "y",
               rangemode = "tozero",
@@ -1627,13 +1607,13 @@ server <- function(input, output, session) {
             data = filtered_data,
             x = ~Date, y = ~WaterTemp,
             type = 'scatter', mode = 'lines',
-            name = 'Water Temp (F)',
+            name = 'Water Temp (°F)',
             yaxis = 'y2',
             line = list(color = 'green', width = 2)
           ) %>%
           layout(
             yaxis2 = list(
-              title = "Water Temp (F)",
+              title = "Water Temp (°F)",
               side = "right",
               overlaying = "y",
               rangemode = "tozero",
@@ -1664,14 +1644,14 @@ server <- function(input, output, session) {
       select(Date, Bacteria, Rainfall_3day, WaterTemp)
     
     names(filtered_data) <- c("Sample Date", "Bacterial Level (CFUs/100mL)", 
-                              "3-Day Rainfall (in)", "Water Temp (F)")
+                              "3-Day Rainfall (in)", "Water Temp (°F)")
     
     datatable(
       filtered_data,
       options = list(pageLength = 10, scrollX = TRUE, dom = 'tip'),
       rownames = FALSE
     ) %>%
-      formatRound(columns = c("Bacterial Level (CFUs/100mL)", "3-Day Rainfall (in)", "Water Temp (F)"), digits = 1)
+      formatRound(columns = c("Bacterial Level (CFUs/100mL)", "3-Day Rainfall (in)", "Water Temp (°F)"), digits = 1)
   })
   
   # Forecast panels with water temperature integration
@@ -1713,7 +1693,7 @@ server <- function(input, output, session) {
       
       # Add water temperature info if available
       water_temp_info <- if (!is.null(water_temp)) {
-        paste("Water Temp:", round(water_temp, 1), "F")
+        paste("Water Temp:", round(water_temp, 1), "°F")
       } else {
         "Water Temp: Estimated"
       }
