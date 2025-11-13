@@ -63,33 +63,62 @@ safe_display_tide_time <- function(time_value) {
 
 generate_scenario_predictions <- function(model, current_env) {
   beaches <- c("North Beach", "Middle Beach", "South Beach", "Polk Street", "Strand Street")
+  beach_codes <- c("North", "Middle", "South", "Polk", "Strand")
   season <- get_current_season()
   current_month <- as.numeric(format(Sys.Date(), "%m"))
-  days_since_start <- as.numeric(Sys.Date() - as.Date("2004-01-01"))
-  
+
+  # Get water temperature if available
+  water_temp <- if (!is.null(current_env$water_temp)) {
+    current_env$water_temp
+  } else {
+    75  # Default summer water temp
+  }
+
   predictions <- data.frame()
-  
-  for (beach in beaches) {
-    baseline <- get_baseline(beach, season)
-    
+
+  for (i in seq_along(beaches)) {
+    beach <- beaches[i]
+    beach_code <- beach_codes[i]
+
+    # Create prediction row matching classification model format
+    # Uses reasonable defaults for water quality parameters since Tab 1 doesn't collect them
     pred_row <- data.frame(
+      beach = factor(beach_code, levels = c("North", "Middle", "South", "Polk", "Strand")),
       rain_3day = current_env$rain_3day,
       maxtemp_f = current_env$maxtemp_f,
+      water_temp_avg_f = water_temp,
+      air_water_diff = current_env$maxtemp_f - water_temp,
       month = current_month,
-      beach_factor = factor(beach, levels = beaches),
-      season_factor = factor(season, levels = c("Winter", "Spring", "Summer", "Fall")),
-      entero_lag1 = baseline,
-      entero_lag7 = baseline,
-      entero_roll7 = baseline,
-      site_baseline = baseline,
-      entero_vs_baseline = 0,
-      rain_temp_interaction = current_env$rain_3day * current_env$maxtemp_f,
-      high_rain = ifelse(current_env$rain_3day > 1, 1, 0),
-      summer_season = ifelse(season == "Summer", 1, 0),
-      days_since_start = days_since_start
+      season_f = factor(season, levels = c("Winter", "Spring", "Summer", "Fall")),
+      conductivity = 40000,  # Typical value
+      do = 7.0,              # Typical value
+      ph = 7.8,              # Typical value
+      salinity = 28,         # Typical value
+      turbidity = 10,        # Typical value
+      stringsAsFactors = FALSE
     )
-    
-    predicted_value <- predict(model, pred_row)
+
+    # Convert to base data.frame for randomForest compatibility
+    pred_row <- as.data.frame(pred_row)
+
+    # Detect model type and predict accordingly
+    is_classification <- "randomForest" %in% class(model) && model$type == "classification"
+
+    if (is_classification) {
+      # Classification model - get probability and class
+      pred_class <- predict(model, pred_row, type = "response")
+      pred_prob <- predict(model, pred_row, type = "prob")
+
+      # Estimate bacteria level from probability
+      if (pred_class == "Yes") {
+        predicted_value <- 70 + (pred_prob[, "Yes"] * 130)
+      } else {
+        predicted_value <- (1 - pred_prob[, "Yes"]) * 50
+      }
+    } else {
+      # Regression model - direct prediction
+      predicted_value <- predict(model, pred_row)
+    }
     
     # Calculate confidence
     data_quality <- 100
