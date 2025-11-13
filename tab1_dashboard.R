@@ -632,7 +632,7 @@ tab1_server <- function(input, output, session, beach_predictions, current_condi
 # 
 # WHAT'S FIXED:
 # Trim error - Using safe_display_tide_time() function for already-formatted strings
-# Model status - Will show "Loaded" when models/main_model.rds exists
+# Model status - Will show "Loaded" when models/tybee_advisory_model.rds exists
 # Simplified layout - All current conditions in one unified box
 # Clear predictions - Separate box with confidence prominently displayed
 # Educational content - HBM framework with "why" and "how" upfront

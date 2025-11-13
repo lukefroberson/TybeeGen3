@@ -144,16 +144,25 @@ model_data_clean <- model_data %>%
     conductivity, do, ph, salinity, turbidity,
     entero
   ) %>%
+  # Remove rows with NA in ANY predictor or response variable
   filter(
     !is.na(beach),
+    !is.na(season_f),
     !is.na(entero),
     !is.na(rain_3day),
     !is.na(maxtemp_f),
     !is.na(water_temp_avg_f),
-    !is.na(season_f)
+    !is.na(air_water_diff),
+    !is.na(month),
+    !is.na(conductivity),
+    !is.na(do),
+    !is.na(ph),
+    !is.na(salinity),
+    !is.na(turbidity)
   )
 
 cat(sprintf("  Clean dataset: %d rows\n", nrow(model_data_clean)))
+cat(sprintf("  Rows removed due to missing values: %d\n", nrow(model_data) - nrow(model_data_clean)))
 
 # ============================================================================
 # STEP 3: VERIFY DATA TYPES BEFORE TRAINING
@@ -239,6 +248,33 @@ for (col in predictor_cols) {
   }
 }
 
+cat("\nDebugging data structure before training...\n")
+cat(sprintf("  X_train class: %s\n", paste(class(X_train), collapse = ", ")))
+cat(sprintf("  X_train dimensions: %d rows x %d cols\n", nrow(X_train), ncol(X_train)))
+cat(sprintf("  y_train class: %s (length: %d)\n", class(y_train), length(y_train)))
+
+# Check for any NA values that might have snuck through
+cat("\nChecking for NAs in each column:\n")
+for (col in predictor_cols) {
+  n_na <- sum(is.na(X_train[[col]]))
+  if (n_na > 0) {
+    cat(sprintf("  WARNING: %s has %d NA values!\n", col, n_na))
+  }
+}
+cat(sprintf("  y_train NAs: %d\n", sum(is.na(y_train))))
+
+# Sample values from numeric columns
+cat("\nSample values from first numeric column (rain_3day):\n")
+cat(sprintf("  Values: %s\n", paste(head(X_train$rain_3day, 10), collapse = ", ")))
+cat(sprintf("  Class: %s\n", class(X_train$rain_3day)))
+cat(sprintf("  Is numeric: %s\n", is.numeric(X_train$rain_3day)))
+cat(sprintf("  Is factor: %s\n", is.factor(X_train$rain_3day)))
+
+# Explicitly convert to base data.frame to avoid tibble issues
+cat("\nConverting to base data.frame to avoid tibble issues...\n")
+X_train <- as.data.frame(X_train)
+cat(sprintf("  X_train class after conversion: %s\n", paste(class(X_train), collapse = ", ")))
+
 cat("\nTraining Random Forest using x/y interface...\n")
 set.seed(123)
 rf_model <- randomForest(
@@ -247,11 +283,24 @@ rf_model <- randomForest(
   ntree = 500,
   mtry = 4,
   importance = TRUE,
-  na.action = na.omit,
   keep.forest = TRUE
+  # Removed na.action since we pre-filtered all NAs
 )
 
 cat("✓ Training complete\n")
+
+# DEBUG: Check the actual structure of xlevels
+cat("\nDEBUG: Examining xlevels structure:\n")
+if (!is.null(rf_model$forest$xlevels)) {
+  for (var_name in names(rf_model$forest$xlevels)) {
+    levels_data <- rf_model$forest$xlevels[[var_name]]
+    cat(sprintf("  %s: class=%s, length=%d, values=%s\n",
+                var_name,
+                class(levels_data),
+                length(levels_data),
+                paste(head(levels_data, 3), collapse=", ")))
+  }
+}
 
 # ============================================================================
 # STEP 6: VERIFY MODEL IMMEDIATELY
@@ -260,35 +309,67 @@ cat("✓ Training complete\n")
 cat("\nSTEP 6: IMMEDIATE MODEL VERIFICATION\n")
 cat("====================================\n")
 
-cat("\nChecking what the model thinks are factors:\n")
+cat("\nChecking xlevels structure:\n")
 if (!is.null(rf_model$forest$xlevels)) {
   factor_in_model <- names(rf_model$forest$xlevels)
-  cat(sprintf("  Factors in model: %s\n", paste(factor_in_model, collapse = ", ")))
-  
-  # Check if any numeric variables became factors
-  problems <- intersect(factor_in_model, numeric_vars)
-  if (length(problems) > 0) {
-    cat("\n❌ PROBLEM! These numeric variables are factors in the model:\n")
-    for (prob in problems) {
-      levels <- rf_model$forest$xlevels[[prob]]
-      cat(sprintf("  • %s: %d levels (%s)\n", 
-                  prob, 
-                  length(levels),
-                  paste(levels[1:min(5, length(levels))], collapse = ", ")))
+  cat(sprintf("  Variables in xlevels: %s\n", paste(factor_in_model, collapse = ", ")))
+
+  # Check if any numeric variables have xlevels entries
+  # NOTE: randomForest stores placeholder "0" values for numeric variables
+  # This is a quirk/bug in randomForest but doesn't affect predictions
+  numeric_in_xlevels <- intersect(factor_in_model, numeric_vars)
+  if (length(numeric_in_xlevels) > 0) {
+    cat("\n⚠ NOTE: These numeric variables have xlevels entries:\n")
+    real_problems <- c()
+    for (var in numeric_in_xlevels) {
+      levels <- rf_model$forest$xlevels[[var]]
+      # Check if it's the harmless "0" placeholder (length=1, value=0)
+      if (length(levels) == 1 && is.numeric(levels) && levels[1] == 0) {
+        cat(sprintf("  • %s: placeholder only (harmless randomForest quirk)\n", var))
+      } else {
+        cat(sprintf("  • %s: %d levels (%s) - ACTUAL PROBLEM!\n",
+                    var, length(levels), paste(head(levels, 3), collapse=", ")))
+        real_problems <- c(real_problems, var)
+      }
     }
-    cat("\nTHIS SHOULD NOT HAPPEN! The model is broken.\n")
+    if (length(real_problems) > 0) {
+      cat("\n❌ REAL PROBLEMS found - model may not work correctly!\n")
+    } else {
+      cat("\n✅ All numeric xlevels are harmless placeholders - model is OK!\n")
+    }
   } else {
-    cat("✅ No numeric variables stored as factors - GOOD!\n")
+    cat("✅ No numeric variables in xlevels - PERFECT!\n")
   }
 } else {
-  cat("⚠ Cannot check factor levels\n")
+  cat("⚠ Cannot check xlevels\n")
 }
 
-# Test prediction
-cat("\nTesting prediction capability...\n")
+# Test prediction on a single observation
+cat("\nTesting prediction capability on single observation...\n")
 test_obs <- test_data[1, ]
-test_pred <- predict(rf_model, test_obs)
-cat(sprintf("  Test prediction: %.2f CFU/100mL\n", test_pred))
+test_pred_single <- predict(rf_model, test_obs)
+cat(sprintf("  Single test prediction: %.2f CFU/100mL\n", test_pred_single))
+
+# Test prediction on entire test set
+cat("\nTesting prediction on entire test set...\n")
+X_test <- test_data[, predictor_cols]
+X_test <- as.data.frame(X_test)  # Ensure it's a data.frame
+test_pred_all <- predict(rf_model, X_test)
+cat(sprintf("  Predictions generated: %d\n", length(test_pred_all)))
+cat(sprintf("  Sample predictions: %s\n", paste(round(head(test_pred_all, 5), 2), collapse=", ")))
+
+# Calculate simple RMSE
+test_rmse <- sqrt(mean((test_pred_all - test_data$entero)^2))
+cat(sprintf("  Test RMSE: %.2f CFU/100mL\n", test_rmse))
+
+# Check if predictions vary (if all same, model is broken)
+pred_var <- var(test_pred_all)
+cat(sprintf("  Prediction variance: %.2f\n", pred_var))
+if (pred_var < 0.01) {
+  cat("  ❌ WARNING: Predictions have near-zero variance - model may not be working!\n")
+} else {
+  cat("  ✓ Predictions vary appropriately\n")
+}
 
 # ============================================================================
 # STEP 7: SAVE MODEL
@@ -321,25 +402,48 @@ cat("==================\n")
 cat("Re-loading model to verify...\n")
 loaded_model <- readRDS("tybee_advisory_model.rds")
 
+# Test prediction with loaded model
+cat("\nTesting loaded model predictions...\n")
+test_sample <- test_data[1:5, predictor_cols]
+test_sample <- as.data.frame(test_sample)
+loaded_predictions <- predict(loaded_model, test_sample)
+cat(sprintf("  Predictions: %s\n", paste(round(loaded_predictions, 2), collapse=", ")))
+
+# Check xlevels structure
 if (!is.null(loaded_model$forest$xlevels)) {
-  factor_vars_in_saved <- names(loaded_model$forest$xlevels)
-  numeric_as_factors <- intersect(factor_vars_in_saved, numeric_vars)
-  
-  if (length(numeric_as_factors) > 0) {
-    cat("❌ SAVED MODEL IS BROKEN!\n")
-    cat(sprintf("These numeric variables are factors: %s\n", 
-                paste(numeric_as_factors, collapse = ", ")))
-  } else {
-    cat("✅ SAVED MODEL IS CORRECT!\n")
-    cat("Only these variables are factors:\n")
-    for (fvar in factor_vars_in_saved) {
-      cat(sprintf("  • %s (%d levels)\n", fvar, length(loaded_model$forest$xlevels[[fvar]])))
+  numeric_in_xlevels <- intersect(names(loaded_model$forest$xlevels), numeric_vars)
+
+  if (length(numeric_in_xlevels) > 0) {
+    # Check if they're the harmless placeholders
+    all_placeholders <- TRUE
+    for (var in numeric_in_xlevels) {
+      levels <- loaded_model$forest$xlevels[[var]]
+      if (!(length(levels) == 1 && is.numeric(levels) && levels[1] == 0)) {
+        all_placeholders <- FALSE
+        break
+      }
     }
+
+    if (all_placeholders) {
+      cat("\n✅ SAVED MODEL IS WORKING CORRECTLY!\n")
+      cat("Note: Numeric variables have harmless placeholder values in xlevels.\n")
+      cat("This is a known randomForest quirk and does not affect predictions.\n")
+    } else {
+      cat("\n❌ SAVED MODEL HAS ISSUES!\n")
+      cat("Some numeric variables are stored as actual factors.\n")
+    }
+  } else {
+    cat("\n✅ SAVED MODEL IS PERFECT!\n")
+    cat("No numeric variables in xlevels.\n")
   }
 } else {
-  cat("⚠ Cannot verify saved model\n")
+  cat("⚠ Cannot verify saved model xlevels\n")
 }
 
 cat("\n=== DIAGNOSTIC TRAINING COMPLETE ===\n")
-cat("\nIf you see '✓ SAVED MODEL IS CORRECT!' above, the model is ready to use.\n")
-cat("If you see '❌ SAVED MODEL IS BROKEN!' something went wrong in the training process.\n")
+cat("\n📊 SUMMARY:\n")
+cat(sprintf("  • Training samples: %d\n", nrow(train_data)))
+cat(sprintf("  • Test samples: %d\n", nrow(test_data)))
+cat(sprintf("  • Test RMSE: %.2f CFU/100mL\n", test_rmse))
+cat(sprintf("  • Prediction variance: %.2f\n", pred_var))
+cat("\nIf you see '✓ SAVED MODEL IS WORKING CORRECTLY!' above, the model is ready to use!\n")

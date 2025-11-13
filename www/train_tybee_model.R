@@ -109,17 +109,29 @@ model_data <- all_data %>%
     tide_stage, wind_direction,
     entero, advisory
   ) %>%
-  # Remove rows with missing critical variables
+  # Remove rows with missing values in ALL predictor and response variables
   filter(
     !is.na(beach),
+    !is.na(season_f),
     !is.na(entero),
     !is.na(rain_3day),
     !is.na(maxtemp_f),
     !is.na(water_temp_avg_f),
-    !is.na(season_f)
+    !is.na(air_water_diff),
+    !is.na(month),
+    !is.na(conductivity),
+    !is.na(do),
+    !is.na(ph),
+    !is.na(salinity),
+    !is.na(turbidity)
   )
 
-cat(sprintf("✓ Clean dataset: %d rows\n", nrow(model_data)))
+n_rows_before <- nrow(all_data)
+n_rows_after <- nrow(model_data)
+cat(sprintf("✓ Clean dataset: %d rows\n", n_rows_after))
+cat(sprintf("✓ Rows removed due to missing values: %d (%.1f%%)\n",
+            n_rows_before - n_rows_after,
+            100 * (n_rows_before - n_rows_after) / n_rows_before))
 cat(sprintf("✓ Date range: %s to %s\n", min(model_data$date), max(model_data$date)))
 cat(sprintf("✓ Advisory rate: %.1f%%\n\n", mean(model_data$advisory) * 100))
 
@@ -206,6 +218,9 @@ cat(sprintf("  Using %d predictors to predict entero\n", length(predictor_cols))
 X_train <- train_data[, predictor_cols]
 y_train <- train_data$entero
 
+# Ensure X_train is a base data.frame (not tibble)
+X_train <- as.data.frame(X_train)
+
 # Train Random Forest using x/y interface
 set.seed(123)
 rf_model <- randomForest(
@@ -214,8 +229,8 @@ rf_model <- randomForest(
   ntree = 500,              # Number of trees
   mtry = 4,                 # Number of variables at each split
   importance = TRUE,        # Calculate variable importance
-  na.action = na.omit,      # Handle missing values
   keep.forest = TRUE        # Keep the forest for prediction
+  # Note: na.action removed - data is pre-filtered
 )
 
 cat("\n")

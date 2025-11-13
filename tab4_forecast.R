@@ -158,45 +158,8 @@ tab4_server <- function(input, output, session, model, historical_data) {
     
     actual_beach_name <- beach_mapping[input$forecast_beach]
     
-    # Create input data frame matching model's expected format
-    # Use variable names that match the source data format
-    # Include both rain3day and rain_3day to match different model expectations
-    new_data <- data.frame(
-      beach = actual_beach_name,
-      rain3day = input$forecast_rain,
-      rain_3day = input$forecast_rain,  # Add underscore version for compatibility
-      water_temp_avg_f = input$forecast_temp,
-      maxtemp_f = input$forecast_air_temp,
-      air_water_diff = input$forecast_air_temp - input$forecast_temp,  # Critical derived variable
-      tide_stage = input$forecast_tide,
-      wind_direction = input$forecast_wind_dir,
-      salinity = input$forecast_salinity,
-      turbidity = input$forecast_turbidity,
-      ph = input$forecast_ph,
-      conductivity = input$forecast_conductivity,
-      do = input$forecast_do,
-      stringsAsFactors = FALSE
-    )
-    
-    # Convert categorical variables to factors with proper levels
-    # This ensures they match the factor levels used during model training
-    new_data$beach <- factor(new_data$beach, 
-                             levels = c("North", "Middle", "South", "Polk", "Strand"))
-    
-    new_data$tide_stage <- factor(new_data$tide_stage,
-                                  levels = c("Low", "Flood 1/4", "Flood 1/2", "Flood 3/4",
-                                           "High", "Ebb 1/4", "Ebb 1/2", "Ebb 3/4"))
-    
-    new_data$wind_direction <- factor(new_data$wind_direction,
-                                      levels = c("N", "NE", "E", "SE", "S", "SW", "W", "NW"))
-    
-    
-    # Add temporal variables (in case model uses them)
+    # Determine season and month (temporal variables)
     current_month <- as.numeric(format(Sys.Date(), "%m"))
-    new_data$month <- current_month
-    new_data$day_of_year <- as.numeric(format(Sys.Date(), "%j"))
-
-    # Determine season
     season <- if (current_month %in% c(12, 1, 2)) {
       "Winter"
     } else if (current_month %in% c(3, 4, 5)) {
@@ -206,64 +169,83 @@ tab4_server <- function(input, output, session, model, historical_data) {
     } else {
       "Fall"
     }
-    new_data$season <- season
-    new_data$season_f <- factor(season, levels = c("Winter", "Spring", "Summer", "Fall"))
+
+    # Create input data frame with ONLY the variables the trained model expects
+    # These match the predictor_cols used in training:
+    # beach, rain_3day, maxtemp_f, water_temp_avg_f, air_water_diff,
+    # month, season_f, conductivity, do, ph, salinity, turbidity
+    new_data <- data.frame(
+      beach = factor(actual_beach_name,
+                     levels = c("North", "Middle", "South", "Polk", "Strand")),
+      rain_3day = as.numeric(input$forecast_rain),
+      maxtemp_f = as.numeric(input$forecast_air_temp),
+      water_temp_avg_f = as.numeric(input$forecast_temp),
+      air_water_diff = as.numeric(input$forecast_air_temp - input$forecast_temp),
+      month = as.numeric(current_month),
+      season_f = factor(season, levels = c("Winter", "Spring", "Summer", "Fall")),
+      conductivity = as.numeric(input$forecast_conductivity),
+      do = as.numeric(input$forecast_do),
+      ph = as.numeric(input$forecast_ph),
+      salinity = as.numeric(input$forecast_salinity),
+      turbidity = as.numeric(input$forecast_turbidity),
+      stringsAsFactors = FALSE
+    )
+
+    # Ensure it's a base data.frame (critical for randomForest)
+    new_data <- as.data.frame(new_data)
     
     # Make prediction - with error handling
     prediction <- tryCatch({
       if (is.null(model)) {
-        stop("Model not loaded. Please ensure tybee_advisory_model.rds is in the models/ directory.")
+        stop("Model not loaded. Please ensure model file is in the models/ directory.")
       }
-      
-      # Debug: Print what variables we're providing vs what model expects
-      cat("\n=== PREDICTION DEBUG INFO ===\n")
-      cat("Variables provided in new_data:\n")
-      print(names(new_data))
-      cat("\nVariable classes:\n")
-      print(sapply(new_data, class))
-      
-      if ("randomForest" %in% class(model)) {
-        cat("\nVariables model expects (from training):\n")
-        print(rownames(model$importance))
-        
-        # Check factor levels match
-        cat("\n=== FACTOR LEVEL VALIDATION ===\n")
-        if (!is.null(model$forest$xlevels)) {
-          for (var_name in names(model$forest$xlevels)) {
-            if (var_name %in% names(new_data)) {
-              model_levels <- model$forest$xlevels[[var_name]]
-              data_value <- as.character(new_data[[var_name]][1])
-              
-              cat(var_name, ": '", data_value, "'", sep = "")
-              if (data_value %in% model_levels) {
-                cat(" ✓\n")
-              } else {
-                cat(" ✗ NOT IN MODEL!\n")
-                cat("  Model expects one of: ", paste(model_levels, collapse = ", "), "\n")
-              }
-            }
-          }
+
+      # Detect model type
+      is_classification <- "randomForest" %in% class(model) && model$type == "classification"
+
+      if (is_classification) {
+        # CLASSIFICATION MODEL - predicts advisory yes/no with probabilities
+        pred_class <- predict(model, newdata = new_data, type = "response")
+        pred_prob <- predict(model, newdata = new_data, type = "prob")
+
+        # Get probability of advisory
+        advisory_prob <- pred_prob[, "Yes"]
+
+        # For classification, show the probability as the main metric
+        # and estimate a bacteria level based on historical patterns
+        # (Advisories are typically 70-200 CFU/100mL)
+        if (pred_class == "Yes") {
+          # Estimate higher end if model predicts advisory
+          estimated_level <- 70 + (advisory_prob * 130)  # Range: 70-200
+        } else {
+          # Estimate lower end if model predicts no advisory
+          estimated_level <- (1 - advisory_prob) * 50  # Range: 0-50
         }
-      }
-      cat("===========================\n\n")
-      
-      # Get prediction and prediction interval from random forest
-      pred_value <- predict(model, newdata = new_data)
-      
-      # Calculate confidence based on prediction variance
-      # For random forest, we can use the individual tree predictions
-      if ("randomForest" %in% class(model)) {
-        tree_preds <- predict(model, newdata = new_data, predict.all = TRUE)$individual
-        pred_sd <- sd(tree_preds)
-        pred_mean <- mean(tree_preds)
+
+        # For classification, confidence is the prediction probability
+        confidence <- max(pred_prob) * 100
+
+        # Approximate standard deviation from probability
+        # More certain predictions have lower SD
+        pred_sd <- 30 * (1 - max(pred_prob))
+        pred_mean <- estimated_level
+
       } else {
-        # Fallback if not random forest
-        pred_mean <- as.numeric(pred_value)
-        pred_sd <- pred_mean * 0.15  # Assume 15% CV as fallback
+        # REGRESSION MODEL - predicts exact bacteria level
+        pred_value <- predict(model, newdata = new_data)
+
+        # Calculate confidence based on prediction variance
+        if ("randomForest" %in% class(model)) {
+          tree_preds <- predict(model, newdata = new_data, predict.all = TRUE)$individual
+          pred_sd <- sd(tree_preds)
+          pred_mean <- mean(tree_preds)
+        } else {
+          pred_mean <- as.numeric(pred_value)
+          pred_sd <- pred_mean * 0.15
+        }
+
+        confidence <- max(0, min(100, 100 * (1 - pred_sd / max(pred_mean, 1))))
       }
-      
-      # Calculate confidence level (inverse of coefficient of variation)
-      confidence <- max(0, min(100, 100 * (1 - pred_sd / max(pred_mean, 1))))
       
       # Calculate factor importance for this specific prediction
       factor_contrib <- calculate_factor_importance(new_data, model, historical_data)
@@ -279,18 +261,18 @@ tab4_server <- function(input, output, session, model, historical_data) {
       )
     },
     error = function(e) {
-      cat("❌ PREDICTION ERROR OCCURRED ❌\n")
-      cat("Error message:", e$message, "\n\n")
-      
-      # If it's a factor level error, provide specific guidance
-      if (grepl("factor", e$message, ignore.case = TRUE) || 
-          grepl("level", e$message, ignore.case = TRUE)) {
-        cat("This is a FACTOR LEVEL MISMATCH!\n")
-        cat("Look at the console output above for '✗ NOT IN MODEL!' markers.\n")
-        cat("One or more categorical variables has a value not in the training data.\n\n")
-      }
-      
-      showNotification(paste("Prediction error:", e$message), type = "error", duration = 10)
+      # Log error to console
+      cat("\n❌ PREDICTION ERROR ❌\n")
+      cat("Error:", e$message, "\n")
+      cat("Beach:", actual_beach_name, "\n")
+      cat("Data columns:", paste(names(new_data), collapse = ", "), "\n\n")
+
+      # Show user-friendly error
+      showNotification(
+        paste("Prediction error:", e$message),
+        type = "error",
+        duration = 10
+      )
       NULL
     })
     
