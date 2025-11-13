@@ -149,11 +149,11 @@ tab4_server <- function(input, output, session, model, historical_data) {
     
     # Map display names to exact names used in training data
     beach_mapping <- c(
-      "North Beach" = "TYBEE ISLAND NORTH",
-      "Middle Beach" = "TYBEE ISLAND MIDDLE",
-      "South Beach" = "TYBEE ISLAND SOUTH",
-      "Polk Street" = "Tybee Island Polk St.",
-      "Strand Street" = "TYBEE ISLAND STRAND"
+      "North Beach" = "North",
+      "Middle Beach" = "Middle",
+      "South Beach" = "South",
+      "Polk Street" = "Polk",
+      "Strand Street" = "Strand"
     )
     
     actual_beach_name <- beach_mapping[input$forecast_beach]
@@ -167,6 +167,7 @@ tab4_server <- function(input, output, session, model, historical_data) {
       rain_3day = input$forecast_rain,  # Add underscore version for compatibility
       water_temp_avg_f = input$forecast_temp,
       maxtemp_f = input$forecast_air_temp,
+      air_water_diff = input$forecast_air_temp - input$forecast_temp,  # Critical derived variable
       tide_stage = input$forecast_tide,
       wind_direction = input$forecast_wind_dir,
       salinity = input$forecast_salinity,
@@ -176,6 +177,18 @@ tab4_server <- function(input, output, session, model, historical_data) {
       do = input$forecast_do,
       stringsAsFactors = FALSE
     )
+    
+    # Convert categorical variables to factors with proper levels
+    # This ensures they match the factor levels used during model training
+    new_data$beach <- factor(new_data$beach, 
+                             levels = c("North", "Middle", "South", "Polk", "Strand"))
+    
+    new_data$tide_stage <- factor(new_data$tide_stage,
+                                  levels = c("Low", "Flood 1/4", "Flood 1/2", "Flood 3/4",
+                                           "High", "Ebb 1/4", "Ebb 1/2", "Ebb 3/4"))
+    
+    new_data$wind_direction <- factor(new_data$wind_direction,
+                                      levels = c("N", "NE", "E", "SE", "S", "SW", "W", "NW"))
     
     
     # Add temporal variables (in case model uses them)
@@ -194,12 +207,45 @@ tab4_server <- function(input, output, session, model, historical_data) {
       "Fall"
     }
     new_data$season <- season
+    new_data$season_f <- factor(season, levels = c("Winter", "Spring", "Summer", "Fall"))
     
     # Make prediction - with error handling
     prediction <- tryCatch({
       if (is.null(model)) {
         stop("Model not loaded. Please ensure tybee_advisory_model.rds is in the models/ directory.")
       }
+      
+      # Debug: Print what variables we're providing vs what model expects
+      cat("\n=== PREDICTION DEBUG INFO ===\n")
+      cat("Variables provided in new_data:\n")
+      print(names(new_data))
+      cat("\nVariable classes:\n")
+      print(sapply(new_data, class))
+      
+      if ("randomForest" %in% class(model)) {
+        cat("\nVariables model expects (from training):\n")
+        print(rownames(model$importance))
+        
+        # Check factor levels match
+        cat("\n=== FACTOR LEVEL VALIDATION ===\n")
+        if (!is.null(model$forest$xlevels)) {
+          for (var_name in names(model$forest$xlevels)) {
+            if (var_name %in% names(new_data)) {
+              model_levels <- model$forest$xlevels[[var_name]]
+              data_value <- as.character(new_data[[var_name]][1])
+              
+              cat(var_name, ": '", data_value, "'", sep = "")
+              if (data_value %in% model_levels) {
+                cat(" ✓\n")
+              } else {
+                cat(" ✗ NOT IN MODEL!\n")
+                cat("  Model expects one of: ", paste(model_levels, collapse = ", "), "\n")
+              }
+            }
+          }
+        }
+      }
+      cat("===========================\n\n")
       
       # Get prediction and prediction interval from random forest
       pred_value <- predict(model, newdata = new_data)
@@ -233,7 +279,18 @@ tab4_server <- function(input, output, session, model, historical_data) {
       )
     },
     error = function(e) {
-      showNotification(paste("Prediction error:", e$message), type = "error", duration = 5)
+      cat("❌ PREDICTION ERROR OCCURRED ❌\n")
+      cat("Error message:", e$message, "\n\n")
+      
+      # If it's a factor level error, provide specific guidance
+      if (grepl("factor", e$message, ignore.case = TRUE) || 
+          grepl("level", e$message, ignore.case = TRUE)) {
+        cat("This is a FACTOR LEVEL MISMATCH!\n")
+        cat("Look at the console output above for '✗ NOT IN MODEL!' markers.\n")
+        cat("One or more categorical variables has a value not in the training data.\n\n")
+      }
+      
+      showNotification(paste("Prediction error:", e$message), type = "error", duration = 10)
       NULL
     })
     
@@ -381,6 +438,9 @@ tab4_server <- function(input, output, session, model, historical_data) {
   # Update map markers when beach selection changes
   observe({
     req(input$forecast_beach)  # Ensure input is available
+    
+    # Debug output
+    cat("Map update triggered for beach:", input$forecast_beach, "\n")
 
     # Load actual site coordinates from TybeeSiteData.xlsx
     site_coords <- tryCatch({
@@ -388,8 +448,10 @@ tab4_server <- function(input, output, session, model, historical_data) {
       # Ensure numeric types
       coord_data$Latitude <- as.numeric(coord_data$Latitude)
       coord_data$Longitude <- as.numeric(coord_data$Longitude)
+      cat("✓ Loaded coordinates from Excel file\n")
       coord_data
     }, error = function(e) {
+      cat("⚠ Using fallback coordinates:", e$message, "\n")
       # Fallback coordinates if file not found
       data.frame(
         MonitoringLocationName = c("TYBEE ISLAND NORTH", "TYBEE ISLAND MIDDLE",
@@ -413,6 +475,15 @@ tab4_server <- function(input, output, session, model, historical_data) {
 
     # Highlight selected beach
     site_coords$is_selected <- site_coords$beach_name == input$forecast_beach
+    
+    # Debug: print which beach is selected
+    cat("Selected beaches:", sum(site_coords$is_selected), "\n")
+    if (sum(site_coords$is_selected) > 0) {
+      selected_beach_data <- site_coords[site_coords$is_selected, ]
+      cat("  Beach name:", selected_beach_data$beach_name, 
+          "Lat:", selected_beach_data$Latitude, 
+          "Lon:", selected_beach_data$Longitude, "\n")
+    }
 
     # Update map with new markers
     leafletProxy("forecast_map", data = site_coords) %>%
@@ -428,6 +499,8 @@ tab4_server <- function(input, output, session, model, historical_data) {
         stroke = TRUE,
         weight = 2
       )
+    
+    cat("Map markers updated\n")
   })
 }
 
