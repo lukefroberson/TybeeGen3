@@ -109,17 +109,29 @@ model_data <- all_data %>%
     tide_stage, wind_direction,
     entero, advisory
   ) %>%
-  # Remove rows with missing critical variables
+  # Remove rows with missing values in ALL predictor and response variables
   filter(
     !is.na(beach),
+    !is.na(season_f),
     !is.na(entero),
     !is.na(rain_3day),
     !is.na(maxtemp_f),
     !is.na(water_temp_avg_f),
-    !is.na(season_f)
+    !is.na(air_water_diff),
+    !is.na(month),
+    !is.na(conductivity),
+    !is.na(do),
+    !is.na(ph),
+    !is.na(salinity),
+    !is.na(turbidity)
   )
 
-cat(sprintf("✓ Clean dataset: %d rows\n", nrow(model_data)))
+n_rows_before <- nrow(all_data)
+n_rows_after <- nrow(model_data)
+cat(sprintf("✓ Clean dataset: %d rows\n", n_rows_after))
+cat(sprintf("✓ Rows removed due to missing values: %d (%.1f%%)\n",
+            n_rows_before - n_rows_after,
+            100 * (n_rows_before - n_rows_after) / n_rows_before))
 cat(sprintf("✓ Date range: %s to %s\n", min(model_data$date), max(model_data$date)))
 cat(sprintf("✓ Advisory rate: %.1f%%\n\n", mean(model_data$advisory) * 100))
 

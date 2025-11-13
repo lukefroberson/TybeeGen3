@@ -144,16 +144,25 @@ model_data_clean <- model_data %>%
     conductivity, do, ph, salinity, turbidity,
     entero
   ) %>%
+  # Remove rows with NA in ANY predictor or response variable
   filter(
     !is.na(beach),
+    !is.na(season_f),
     !is.na(entero),
     !is.na(rain_3day),
     !is.na(maxtemp_f),
     !is.na(water_temp_avg_f),
-    !is.na(season_f)
+    !is.na(air_water_diff),
+    !is.na(month),
+    !is.na(conductivity),
+    !is.na(do),
+    !is.na(ph),
+    !is.na(salinity),
+    !is.na(turbidity)
   )
 
 cat(sprintf("  Clean dataset: %d rows\n", nrow(model_data_clean)))
+cat(sprintf("  Rows removed due to missing values: %d\n", nrow(model_data) - nrow(model_data_clean)))
 
 # ============================================================================
 # STEP 3: VERIFY DATA TYPES BEFORE TRAINING
