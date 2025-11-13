@@ -172,14 +172,15 @@ n_no <- sum(y_train == "No")
 n_yes <- sum(y_train == "Yes")
 base_weight_ratio <- n_no / n_yes
 
-# MULTIPLY by 10 to be EXTREMELY aggressive (much higher than before!)
-weight_ratio <- base_weight_ratio * 10
+# MULTIPLY by 20 to be ULTRA aggressive!
+# With R²=4%, we need to compensate by being very sensitive
+weight_ratio <- base_weight_ratio * 20
 
 cat(sprintf("Base class weight ratio: %.1f\n", base_weight_ratio))
 cat(sprintf("Adjusted weight ratio: %.1f (giving %.1fx weight to Advisory)\n\n",
             weight_ratio, weight_ratio))
 
-# Train classification Random Forest with EXTREMELY aggressive settings
+# Train classification Random Forest with ULTRA aggressive settings
 # Note: With R²=4%, environmental variables barely predict bacteria
 # So we compensate by being very trigger-happy on advisories
 set.seed(123)
@@ -189,8 +190,8 @@ rf_model <- randomForest(
   ntree = 500,
   mtry = 4,
   importance = TRUE,
-  classwt = c("No" = 1, "Yes" = weight_ratio),  # Extreme weight for minority class
-  cutoff = c("No" = 0.92, "Yes" = 0.08),  # EXTREMELY low threshold (8% probability triggers advisory!)
+  classwt = c("No" = 1, "Yes" = weight_ratio),  # Ultra-extreme weight for minority class
+  cutoff = c("No" = 0.95, "Yes" = 0.05),  # ULTRA low threshold (5% probability triggers advisory!)
   keep.forest = TRUE
 )
 
@@ -251,9 +252,9 @@ cat(sprintf("  Accuracy: %.1f%%\n", as.numeric(accuracy) * 100))
 cat(sprintf("  Sensitivity (catches real advisories): %.1f%%\n", as.numeric(sensitivity) * 100))
 cat(sprintf("  Specificity (correct non-advisories): %.1f%%\n", as.numeric(specificity) * 100))
 
-# Safe precision output
+# Safe precision output (note: %% to escape the % in "% of")
 if (!is.na(precision) && length(precision) == 1) {
-  cat(sprintf("  Precision (% of advisory predictions that are correct): %.1f%%\n", as.numeric(precision) * 100))
+  cat(sprintf("  Precision (%% of advisory predictions that are correct): %.1f%%\n", as.numeric(precision) * 100))
 } else {
   cat("  Precision: N/A (no advisory predictions made)\n")
 }
