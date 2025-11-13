@@ -203,6 +203,12 @@ tab4_server <- function(input, output, session, model, historical_data) {
       # Detect model type
       is_classification <- "randomForest" %in% class(model) && model$type == "classification"
 
+      # DEBUG: Print model info
+      cat("\n=== TAB 4 PREDICTION DEBUG ===\n")
+      cat("Model class:", class(model), "\n")
+      cat("Model type:", model$type, "\n")
+      cat("Is classification:", is_classification, "\n")
+
       if (is_classification) {
         # CLASSIFICATION MODEL - predicts advisory yes/no with probabilities
         pred_class <- predict(model, newdata = new_data, type = "response")
@@ -210,6 +216,12 @@ tab4_server <- function(input, output, session, model, historical_data) {
 
         # Get probability of advisory
         advisory_prob <- pred_prob[, "Yes"]
+
+        # DEBUG: Print prediction details
+        cat("Predicted class:", as.character(pred_class), "\n")
+        cat("Advisory probability:", advisory_prob, "\n")
+        cat("Prob matrix:\n")
+        print(pred_prob)
 
         # For classification, show the probability as the main metric
         # and estimate a bacteria level based on historical patterns
