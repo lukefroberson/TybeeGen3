@@ -1181,13 +1181,14 @@ server <- function(input, output, session) {
     # Get current environmental conditions
     weather <- current_conditions$weather
     water_temp <- current_conditions$water_temp
-    
+
     # Build current environment data
     current_env <- list(
       rain_3day = 0.5,  # Default assumption - could be improved with rainfall API
-      maxtemp_f = if (!is.null(weather)) weather$temperature * 9/5 + 32 else 75
+      maxtemp_f = if (!is.null(weather)) weather$temperature * 9/5 + 32 else 75,
+      water_temp = if (!is.null(water_temp)) water_temp$temp_f else 75
     )
-    
+
     # Generate predictions
     generate_scenario_predictions(trained_models$main, current_env)
   })
