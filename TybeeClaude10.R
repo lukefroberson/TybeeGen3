@@ -406,29 +406,25 @@ load_trained_models <- function() {
   models <- list()
 
   tryCatch({
-    if (file.exists("models/main_model.rds")) {
-      models$main <- readRDS("models/main_model.rds")
-      cat("✓ Loaded trained model from models/main_model.rds\n")
+    # Load single unified model (can be regression or classification)
+    if (file.exists("models/tybee_advisory_model.rds")) {
+      models$forecast <- readRDS("models/tybee_advisory_model.rds")
+      cat("✓ Loaded model from models/tybee_advisory_model.rds\n")
+
+      # Also set as "main" for backward compatibility with Tab 1
+      models$main <- models$forecast
     } else {
-      cat("⚠ No trained model found at models/main_model.rds\n")
+      cat("⚠ No model found at models/tybee_advisory_model.rds\n")
+      models$forecast <- NULL
       models$main <- NULL
     }
 
-    if (file.exists("models/model_metadata.rds")) {
-      models$metadata <- readRDS("models/model_metadata.rds")
+    if (file.exists("models/tybee_advisory_metadata.rds")) {
+      models$metadata <- readRDS("models/tybee_advisory_metadata.rds")
       cat("✓ Loaded model metadata\n")
     } else {
       cat("⚠ No model metadata found\n")
       models$metadata <- NULL
-    }
-
-    # Load forecast model for Tab 4
-    if (file.exists("models/tybee_advisory_model.rds")) {
-      models$forecast <- readRDS("models/tybee_advisory_model.rds")
-      cat("✓ Loaded forecast model from models/tybee_advisory_model.rds\n")
-    } else {
-      cat("⚠ No forecast model found at models/tybee_advisory_model.rds\n")
-      models$forecast <- NULL
     }
   }, error = function(e) {
     cat("✗ Error loading trained models:", e$message, "\n")
