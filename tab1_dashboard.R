@@ -169,7 +169,6 @@ generate_scenario_predictions <- function(model, current_env) {
       status_icon = status_icon,
       status_color = status_color,
       key_factors = paste(factors, collapse = " + "),
-      baseline = baseline,
       stringsAsFactors = FALSE
     ))
   }
