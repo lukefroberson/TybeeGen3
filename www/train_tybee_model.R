@@ -194,16 +194,23 @@ cat(sprintf("✓ Testing set: %d rows (%.1f%% advisory)\n\n",
 
 cat("5. TRAINING RANDOM FOREST MODEL...\n")
 
-# Define formula with all predictors
-model_formula <- entero ~ beach + rain_3day + maxtemp_f + water_temp_avg_f + 
-                          air_water_diff + month + season_f + 
-                          conductivity + do + ph + salinity + turbidity
+# Define predictor columns explicitly (factors and numeric)
+predictor_cols <- c("beach", "rain_3day", "maxtemp_f", "water_temp_avg_f",
+                    "air_water_diff", "month", "season_f",
+                    "conductivity", "do", "ph", "salinity", "turbidity")
 
-# Train Random Forest
+cat(sprintf("  Using %d predictors to predict entero\n", length(predictor_cols)))
+
+# Extract predictors and response - use x/y interface instead of formula
+# This is more reliable with mixed factor/numeric data
+X_train <- train_data[, predictor_cols]
+y_train <- train_data$entero
+
+# Train Random Forest using x/y interface
 set.seed(123)
 rf_model <- randomForest(
-  model_formula,
-  data = train_data,
+  x = X_train,              # Predictor matrix
+  y = y_train,              # Response vector
   ntree = 500,              # Number of trees
   mtry = 4,                 # Number of variables at each split
   importance = TRUE,        # Calculate variable importance
@@ -362,6 +369,8 @@ metadata <- list(
   n_observations_train = nrow(train_data),
   n_observations_test = nrow(test_data),
   date_range = c(min(model_data$date), max(model_data$date)),
+  predictor_variables = predictor_cols,
+  response_variable = "entero",
   features_used = rownames(importance(rf_model)),
   performance = list(
     train_rmse = train_rmse,

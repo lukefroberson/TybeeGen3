@@ -210,18 +210,40 @@ cat(sprintf("Testing: %d rows\n", nrow(test_data)))
 cat("\nSTEP 5: TRAIN RANDOM FOREST\n")
 cat("===========================\n")
 
-cat("Creating formula...\n")
-model_formula <- entero ~ beach + rain_3day + maxtemp_f + water_temp_avg_f + 
-                          air_water_diff + month + season_f + 
-                          conductivity + do + ph + salinity + turbidity
+cat("Preparing predictor variables and response...\n")
 
-cat("Formula:", deparse(model_formula), "\n")
+# Define predictor columns (factors and numeric)
+predictor_cols <- c("beach", "rain_3day", "maxtemp_f", "water_temp_avg_f",
+                    "air_water_diff", "month", "season_f",
+                    "conductivity", "do", "ph", "salinity", "turbidity")
 
-cat("\nTraining Random Forest...\n")
+cat(sprintf("  Predictors: %s\n", paste(predictor_cols, collapse = ", ")))
+cat(sprintf("  Response: entero\n"))
+
+# Extract predictors and response
+X_train <- train_data[, predictor_cols]
+y_train <- train_data$entero
+
+# Verify types one more time
+cat("\nFinal type verification before training:\n")
+cat("  Factors in X_train:\n")
+for (col in predictor_cols) {
+  if (is.factor(X_train[[col]])) {
+    cat(sprintf("    %s: factor with %d levels\n", col, length(levels(X_train[[col]]))))
+  }
+}
+cat("  Numeric in X_train:\n")
+for (col in predictor_cols) {
+  if (is.numeric(X_train[[col]])) {
+    cat(sprintf("    %s: numeric\n", col))
+  }
+}
+
+cat("\nTraining Random Forest using x/y interface...\n")
 set.seed(123)
 rf_model <- randomForest(
-  model_formula,
-  data = train_data,
+  x = X_train,
+  y = y_train,
   ntree = 500,
   mtry = 4,
   importance = TRUE,
@@ -283,7 +305,8 @@ metadata <- list(
   training_date = Sys.Date(),
   n_train = nrow(train_data),
   n_test = nrow(test_data),
-  formula = deparse(model_formula)
+  predictors = predictor_cols,
+  response = "entero"
 )
 saveRDS(metadata, "tybee_advisory_metadata.rds")
 cat("✓ Saved: tybee_advisory_metadata.rds\n")
