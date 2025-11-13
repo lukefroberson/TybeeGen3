@@ -167,15 +167,19 @@ X_train <- as.data.frame(train_data[, predictor_cols])
 y_train <- train_data$advisory
 
 # Calculate class weights to handle imbalance
-# Give much more weight to the minority class (advisory)
+# Give MUCH MORE weight to the minority class (advisory)
 n_no <- sum(y_train == "No")
 n_yes <- sum(y_train == "Yes")
-weight_ratio <- n_no / n_yes
+base_weight_ratio <- n_no / n_yes
 
-cat(sprintf("Class weight ratio: %.1f (giving %.1fx weight to Advisory)\n\n",
+# MULTIPLY by 3 to be much more aggressive
+weight_ratio <- base_weight_ratio * 3
+
+cat(sprintf("Base class weight ratio: %.1f\n", base_weight_ratio))
+cat(sprintf("Adjusted weight ratio: %.1f (giving %.1fx weight to Advisory)\n\n",
             weight_ratio, weight_ratio))
 
-# Train classification Random Forest
+# Train classification Random Forest with VERY aggressive settings
 set.seed(123)
 rf_model <- randomForest(
   x = X_train,
@@ -183,8 +187,8 @@ rf_model <- randomForest(
   ntree = 500,
   mtry = 4,
   importance = TRUE,
-  classwt = c("No" = 1, "Yes" = weight_ratio),  # Weight minority class
-  cutoff = c("No" = 0.7, "Yes" = 0.3),  # Lower threshold for advisory
+  classwt = c("No" = 1, "Yes" = weight_ratio),  # Much higher weight for minority class
+  cutoff = c("No" = 0.85, "Yes" = 0.15),  # VERY low threshold for advisory (15%)
   keep.forest = TRUE
 )
 
@@ -209,21 +213,51 @@ cat("\nCONFUSION MATRIX:\n")
 print(conf_matrix)
 cat("\n")
 
-# Calculate metrics
+# Calculate metrics safely (handle division by zero)
 accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
-sensitivity <- conf_matrix["Yes", "Yes"] / sum(conf_matrix[, "Yes"])
-specificity <- conf_matrix["No", "No"] / sum(conf_matrix[, "No"])
-precision <- conf_matrix["Yes", "Yes"] / sum(conf_matrix["Yes", ])
 
-# F1 score
-f1 <- 2 * (precision * sensitivity) / (precision + sensitivity)
+# Sensitivity: Of all real advisories, how many did we catch?
+if (sum(conf_matrix[, "Yes"]) > 0) {
+  sensitivity <- conf_matrix["Yes", "Yes"] / sum(conf_matrix[, "Yes"])
+} else {
+  sensitivity <- 0
+}
+
+# Specificity: Of all real non-advisories, how many did we correctly identify?
+if (sum(conf_matrix[, "No"]) > 0) {
+  specificity <- conf_matrix["No", "No"] / sum(conf_matrix[, "No"])
+} else {
+  specificity <- 0
+}
+
+# Precision: Of all our advisory predictions, how many were correct?
+if (sum(conf_matrix["Yes", ]) > 0) {
+  precision <- conf_matrix["Yes", "Yes"] / sum(conf_matrix["Yes", ])
+} else {
+  precision <- NA
+}
+
+# F1 score (harmonic mean of precision and recall)
+if (!is.na(precision) && (precision + sensitivity) > 0) {
+  f1 <- 2 * (precision * sensitivity) / (precision + sensitivity)
+} else {
+  f1 <- NA
+}
 
 cat("PERFORMANCE METRICS:\n")
 cat(sprintf("  Accuracy: %.1f%%\n", accuracy * 100))
 cat(sprintf("  Sensitivity (catches real advisories): %.1f%%\n", sensitivity * 100))
 cat(sprintf("  Specificity (correct non-advisories): %.1f%%\n", specificity * 100))
-cat(sprintf("  Precision (% of predictions that are correct): %.1f%%\n", precision * 100))
-cat(sprintf("  F1 Score: %.3f\n\n", f1))
+if (!is.na(precision)) {
+  cat(sprintf("  Precision (% of advisory predictions that are correct): %.1f%%\n", precision * 100))
+} else {
+  cat("  Precision: N/A (no advisory predictions made)\n")
+}
+if (!is.na(f1)) {
+  cat(sprintf("  F1 Score: %.3f\n\n", f1))
+} else {
+  cat("  F1 Score: N/A\n\n")
+}
 
 # Variable importance
 cat("VARIABLE IMPORTANCE:\n")
