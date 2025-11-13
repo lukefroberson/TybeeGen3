@@ -167,19 +167,21 @@ X_train <- as.data.frame(train_data[, predictor_cols])
 y_train <- train_data$advisory
 
 # Calculate class weights to handle imbalance
-# Give MUCH MORE weight to the minority class (advisory)
+# Give EXTREMELY high weight to the minority class (advisory)
 n_no <- sum(y_train == "No")
 n_yes <- sum(y_train == "Yes")
 base_weight_ratio <- n_no / n_yes
 
-# MULTIPLY by 3 to be much more aggressive
-weight_ratio <- base_weight_ratio * 3
+# MULTIPLY by 10 to be EXTREMELY aggressive (much higher than before!)
+weight_ratio <- base_weight_ratio * 10
 
 cat(sprintf("Base class weight ratio: %.1f\n", base_weight_ratio))
 cat(sprintf("Adjusted weight ratio: %.1f (giving %.1fx weight to Advisory)\n\n",
             weight_ratio, weight_ratio))
 
-# Train classification Random Forest with VERY aggressive settings
+# Train classification Random Forest with EXTREMELY aggressive settings
+# Note: With R²=4%, environmental variables barely predict bacteria
+# So we compensate by being very trigger-happy on advisories
 set.seed(123)
 rf_model <- randomForest(
   x = X_train,
@@ -187,8 +189,8 @@ rf_model <- randomForest(
   ntree = 500,
   mtry = 4,
   importance = TRUE,
-  classwt = c("No" = 1, "Yes" = weight_ratio),  # Much higher weight for minority class
-  cutoff = c("No" = 0.85, "Yes" = 0.15),  # VERY low threshold for advisory (15%)
+  classwt = c("No" = 1, "Yes" = weight_ratio),  # Extreme weight for minority class
+  cutoff = c("No" = 0.92, "Yes" = 0.08),  # EXTREMELY low threshold (8% probability triggers advisory!)
   keep.forest = TRUE
 )
 
@@ -232,29 +234,33 @@ if (sum(conf_matrix[, "No"]) > 0) {
 
 # Precision: Of all our advisory predictions, how many were correct?
 if (sum(conf_matrix["Yes", ]) > 0) {
-  precision <- conf_matrix["Yes", "Yes"] / sum(conf_matrix["Yes", ])
+  precision <- as.numeric(conf_matrix["Yes", "Yes"]) / as.numeric(sum(conf_matrix["Yes", ]))
 } else {
   precision <- NA
 }
 
 # F1 score (harmonic mean of precision and recall)
-if (!is.na(precision) && (precision + sensitivity) > 0) {
-  f1 <- 2 * (precision * sensitivity) / (precision + sensitivity)
+if (!is.na(precision) && !is.na(sensitivity) && (precision + sensitivity) > 0) {
+  f1 <- 2 * (as.numeric(precision) * as.numeric(sensitivity)) / (as.numeric(precision) + as.numeric(sensitivity))
 } else {
   f1 <- NA
 }
 
 cat("PERFORMANCE METRICS:\n")
-cat(sprintf("  Accuracy: %.1f%%\n", accuracy * 100))
-cat(sprintf("  Sensitivity (catches real advisories): %.1f%%\n", sensitivity * 100))
-cat(sprintf("  Specificity (correct non-advisories): %.1f%%\n", specificity * 100))
-if (!is.na(precision)) {
-  cat(sprintf("  Precision (% of advisory predictions that are correct): %.1f%%\n", precision * 100))
+cat(sprintf("  Accuracy: %.1f%%\n", as.numeric(accuracy) * 100))
+cat(sprintf("  Sensitivity (catches real advisories): %.1f%%\n", as.numeric(sensitivity) * 100))
+cat(sprintf("  Specificity (correct non-advisories): %.1f%%\n", as.numeric(specificity) * 100))
+
+# Safe precision output
+if (!is.na(precision) && length(precision) == 1) {
+  cat(sprintf("  Precision (% of advisory predictions that are correct): %.1f%%\n", as.numeric(precision) * 100))
 } else {
   cat("  Precision: N/A (no advisory predictions made)\n")
 }
-if (!is.na(f1)) {
-  cat(sprintf("  F1 Score: %.3f\n\n", f1))
+
+# Safe F1 output
+if (!is.na(f1) && length(f1) == 1) {
+  cat(sprintf("  F1 Score: %.3f\n\n", as.numeric(f1)))
 } else {
   cat("  F1 Score: N/A\n\n")
 }
