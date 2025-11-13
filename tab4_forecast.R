@@ -2,6 +2,9 @@
 # This module provides an interactive tool for users to adjust environmental
 # parameters and see real-time predictions of bacteria levels
 
+# Required libraries
+library(readxl)  # For reading site coordinates from Excel
+
 # ============================================================================
 # UI COMPONENT
 # ============================================================================
@@ -156,14 +159,11 @@ tab4_server <- function(input, output, session, model, historical_data) {
     actual_beach_name <- beach_mapping[input$forecast_beach]
     
     # Create input data frame matching model's expected format
-    # Use exact variable names from training data
+    # Use variable names that match the source data format
     new_data <- data.frame(
       beach_name = actual_beach_name,
-      beach = actual_beach_name,
       rain3day = input$forecast_rain,
-      rain_3day = input$forecast_rain,
       water_temp_avg_f = input$forecast_temp,
-      water_temp = input$forecast_temp,
       maxtemp_f = input$forecast_air_temp,
       tide_stage = input$forecast_tide,
       wind_direction = input$forecast_wind_dir,
@@ -177,13 +177,11 @@ tab4_server <- function(input, output, session, model, historical_data) {
     
     
     # Add temporal variables (in case model uses them)
-    new_data$Month <- as.numeric(format(Sys.Date(), "%m"))
-    new_data$month <- new_data$Month
-    new_data$DayOfYear <- as.numeric(format(Sys.Date(), "%j"))
-    new_data$day_of_year <- new_data$DayOfYear
-    
+    current_month <- as.numeric(format(Sys.Date(), "%m"))
+    new_data$month <- current_month
+    new_data$day_of_year <- as.numeric(format(Sys.Date(), "%j"))
+
     # Determine season
-    current_month <- new_data$Month[1]
     season <- if (current_month %in% c(12, 1, 2)) {
       "Winter"
     } else if (current_month %in% c(3, 4, 5)) {
@@ -193,7 +191,6 @@ tab4_server <- function(input, output, session, model, historical_data) {
     } else {
       "Fall"
     }
-    new_data$Season <- season
     new_data$season <- season
     
     # Make prediction - with error handling

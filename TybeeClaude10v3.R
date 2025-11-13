@@ -16,6 +16,7 @@ library(ggplot2)
 source("tab1_dashboard.R")        # Tab 1: Dashboard
 source("tab2_education.R")        # Tab 2: Learn About Water Quality
 source("tab3_historic_data.R")    # Tab 3: Historic Data
+source("tab4_forecast.R")         # Tab 4: Interactive Forecast Tool
 
 # Focused USGS function - extract from the 'value' field we just found!
 get_usgs_water_temp <- function(verbose = FALSE) {
@@ -403,7 +404,7 @@ cat("✓ Tab 1 components loaded\n")
 # Function to load trained models
 load_trained_models <- function() {
   models <- list()
-  
+
   tryCatch({
     if (file.exists("models/main_model.rds")) {
       models$main <- readRDS("models/main_model.rds")
@@ -412,7 +413,7 @@ load_trained_models <- function() {
       cat("⚠ No trained model found at models/main_model.rds\n")
       models$main <- NULL
     }
-    
+
     if (file.exists("models/model_metadata.rds")) {
       models$metadata <- readRDS("models/model_metadata.rds")
       cat("✓ Loaded model metadata\n")
@@ -420,12 +421,22 @@ load_trained_models <- function() {
       cat("⚠ No model metadata found\n")
       models$metadata <- NULL
     }
+
+    # Load forecast model for Tab 4
+    if (file.exists("models/tybee_advisory_model.rds")) {
+      models$forecast <- readRDS("models/tybee_advisory_model.rds")
+      cat("✓ Loaded forecast model from models/tybee_advisory_model.rds\n")
+    } else {
+      cat("⚠ No forecast model found at models/tybee_advisory_model.rds\n")
+      models$forecast <- NULL
+    }
   }, error = function(e) {
     cat("✗ Error loading trained models:", e$message, "\n")
     models$main <- NULL
     models$metadata <- NULL
+    models$forecast <- NULL
   })
-  
+
   return(models)
 }
 
@@ -1006,128 +1017,9 @@ ui <- dashboardPage(
       # ===== TAB 3: HISTORIC DATA =====
       tab3_ui,
       
-      # ENHANCED Interactive Tool Tab with Water Temperature
+      # ===== TAB 4: INTERACTIVE FORECAST TOOL =====
       tabItem(tabName = "interactive",
-              fluidRow(
-                box(title = "Environmental Conditions Forecast Tool", width = 12, status = "danger", solidHeader = TRUE,
-                    p("Enter environmental conditions to predict bacterial levels and advisory status."),
-                    
-                    # Info Panel
-                    fluidRow(
-                      column(12,
-                             div(style = "background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin-bottom: 15px;",
-                                 div(style = "cursor: pointer;", 
-                                     onclick = "$(this).next().toggle();",
-                                     h4(icon("info-circle"), " How Environmental Factors Affect Water Quality ", 
-                                        icon("chevron-down", style = "float: right;"))),
-                                 div(id = "factor_explanations", style = "display: none; margin-top: 10px;",
-                                     fluidRow(
-                                       column(6,
-                                              h5("Weather Factors:"),
-                                              tags$ul(
-                                                tags$li(strong("Rainfall:"), " Recent rain washes bacteria from land into the ocean. More rain = higher bacteria levels."),
-                                                tags$li(strong("Air Temperature:"), " Warmer weather helps bacteria grow faster in the water."),
-                                                tags$li(strong("Wind Speed:"), " Strong winds can stir up sediment and bacteria from the ocean floor.")
-                                              ),
-                                              h5("Water Conditions:"),
-                                              tags$ul(
-                                                tags$li(strong("Water Temperature:"), " Bacteria thrive in warmer water, especially above 78°F. This is our most accurate predictor when available."),
-                                                tags$li(strong("Tide Stage:"), " Low tide concentrates bacteria in shallow areas. High tide dilutes them.")
-                                              )
-                                       ),
-                                       column(6,
-                                              h5("Environmental Controls:"),
-                                              tags$ul(
-                                                tags$li(strong("UV Index:"), " Sunlight kills bacteria naturally. Higher UV = cleaner water."),
-                                                tags$li(strong("Days Since Rain:"), " Bacteria levels drop over time after rainfall as they get washed away or die off."),
-                                                tags$li(strong("Season:"), " Summer brings more beachgoers and warmer conditions that favor bacterial growth.")
-                                              ),
-                                              div(style = "background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-top: 10px;",
-                                                  p(style = "margin: 0; font-size: 14px;", 
-                                                    strong("Advisory Threshold: "), "When bacteria levels exceed 70 CFUs/100mL, swimming is not recommended due to increased risk of illness.")
-                                              )
-                                       )
-                                     )
-                                 )
-                             )
-                      )
-                    ),
-                    
-                    fluidRow(
-                      column(4,
-                             h4("Meteorological Factors"),
-                             selectInput("forecast_site", "Select Beach Site:", choices = NULL),
-                             sliderInput("rain_input", "3-Day Rainfall (inches):", 
-                                         min = 0, max = 5, value = 0.5, step = 0.1),
-                             sliderInput("air_temp_input", "Air Temperature (°F):", 
-                                         min = 50, max = 100, value = 80, step = 1),
-                             sliderInput("wind_speed_input", "Wind Speed (mph):", 
-                                         min = 0, max = 30, value = 10, step = 1)
-                      ),
-                      column(4,
-                             h4("Water & Environmental"),
-                             sliderInput("water_temp_input", "Water Temperature (°F):", 
-                                         min = 50, max = 90, value = 75, step = 1),
-                             sliderInput("uv_index_input", "UV Index:", 
-                                         min = 1, max = 11, value = 6, step = 1),
-                             selectInput("tide_input", "Tide Stage:", 
-                                         choices = c("Low", "Rising", "High", "Falling"),
-                                         selected = "High"),
-                             sliderInput("days_since_rain_input", "Days Since Last Rain:", 
-                                         min = 0, max = 14, value = 2, step = 1)
-                      ),
-                      column(4,
-                             h4("Timing & Activity"),
-                             selectInput("season_input", "Season:", 
-                                         choices = c("Winter", "Spring", "Summer", "Fall"),
-                                         selected = "Summer"),
-                             checkboxInput("weekend_input", "Weekend/Holiday", value = FALSE),
-                             br(),
-                             actionButton("run_model", "Update Forecast", 
-                                          class = "btn-primary btn-lg", 
-                                          icon = icon("calculator"),
-                                          style = "width: 100%; margin-bottom: 10px;"),
-                             actionButton("reset_model", "Reset to Defaults", 
-                                          class = "btn-default", 
-                                          icon = icon("undo"),
-                                          style = "width: 100%; margin-bottom: 10px;"),
-                             
-                             # Advanced Settings Panel
-                             div(style = "margin-top: 15px;",
-                                 div(style = "cursor: pointer; background-color: #f8f9fa; padding: 10px; border-radius: 5px;", 
-                                     onclick = "$(this).next().toggle();",
-                                     h5(icon("cogs"), " Advanced Model Settings ", 
-                                        icon("chevron-down", style = "float: right;"))),
-                                 div(id = "advanced_settings", style = "display: none; background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 5px;",
-                                     h6("Model Baseline Settings:"),
-                                     sliderInput("baseline_bacteria", "Starting Bacteria Level:", 
-                                                 min = 20, max = 100, value = 45, step = 5),
-                                     sliderInput("rainfall_sensitivity", "Rainfall Effect Strength:", 
-                                                 min = 0.5, max = 3.0, value = 1.5, step = 0.1),
-                                     sliderInput("uv_disinfection", "UV Disinfection Power:", 
-                                                 min = 0.3, max = 1.0, value = 0.7, step = 0.1),
-                                     p(style = "font-size: 12px; color: #666; margin-top: 10px;",
-                                       "These settings control how sensitive the model is to different environmental factors.")
-                                 )
-                             ),
-                             
-                             br(),
-                             div(id = "model_result_container",
-                                 uiOutput("model_result"))
-                      )
-                    ),
-                    tags$hr(),
-                    h4("Prediction Details"),
-                    fluidRow(
-                      column(6,
-                             plotOutput("model_factors_plot", height = 400)
-                      ),
-                      column(6,
-                             uiOutput("detailed_results")
-                      )
-                    )
-                )
-              )
+              tab4_ui()
       ),
       
       # Model Performance Tab (simplified for this version)
@@ -1257,7 +1149,8 @@ server <- function(input, output, session) {
   # Convert to reactiveValues for Tab 1 compatibility
   trained_models <- reactiveValues(
     main = trained_models_original$main,
-    metadata = trained_models_original$metadata
+    metadata = trained_models_original$metadata,
+    forecast = trained_models_original$forecast
   )
   
   # Current conditions for Tab 1
@@ -1305,10 +1198,13 @@ server <- function(input, output, session) {
   
   # Call Tab 1 server
   tab1_server(input, output, session, beach_predictions, current_conditions, trained_models)
-  
+
   # Call Tab 2 server
   tab2_server(input, output, session)
-  
+
+  # Call Tab 4 server - Interactive Forecast Tool
+  tab4_server(input, output, session, trained_models$forecast, historical_data = NULL)
+
   # Call Tab 3 server - Note: Tab 3 expects data in specific format
   # It will use the existing data() reactive and site selection
   # The tab3_server function is defined in tab3_historic_data.R
