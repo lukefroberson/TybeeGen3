@@ -203,11 +203,14 @@ tab4_server <- function(input, output, session, model, historical_data) {
       # Detect model type
       is_classification <- "randomForest" %in% class(model) && model$type == "classification"
 
-      # DEBUG: Print model info
+      # DEBUG: Print model info and input data
       cat("\n=== TAB 4 PREDICTION DEBUG ===\n")
       cat("Model class:", class(model), "\n")
       cat("Model type:", model$type, "\n")
       cat("Is classification:", is_classification, "\n")
+      cat("\nInput data:\n")
+      print(new_data)
+      cat("\n")
 
       if (is_classification) {
         # CLASSIFICATION MODEL - predicts advisory yes/no with probabilities
